@@ -6,3 +6,4 @@ https://valentinitnelav.github.io/satellite-image-classification-r/
 Valentin Ștefan. (2019). Exercise with pixel based supervised classification of Sentinel-2 multispectral images in R. Comparing Random Forests, SVM and Neural Networks. Zenodo. https://doi.org/10.5281/zenodo.7155593
 
 
+discuss the ras to vect to rast conversion issues and re - adding base woodland map and adjusting the % increase calculations
