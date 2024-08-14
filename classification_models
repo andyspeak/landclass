@@ -18,16 +18,15 @@ library(NeuralNetTools)
 library(LiblineaR)
 
 
-jp2_path <- "C:/Documents/sentinel2files"      #link to folder containing the sentinel 2 jp2 files
+jp2_path <- "C:/Documents/sentinel2files"      #link to folder containing your sentinel 2 jp2 files
 jp2_10m <- list.files(jp2_path, pattern = ".*jp2$", full.names = TRUE)
 rst_lst <- lapply(jp2_10m, FUN = raster)
-
 
 #create an extent for the area of interest
 #may be tricky to get it to cover all the different raster resolutions
 e <- as(extent(499980, 530290, 6027120, 6060250), 'SpatialPolygons')   #change the numbers to the corners of your extent
 e <- st_as_sf(e)
-st_crs(e) <- 32630
+st_crs(e) <- 32630  #set the correct crs for your area
 
 #create the raster brick
 rst_crop_lst <- lapply(rst_lst, FUN = raster::crop, y = e)
@@ -42,6 +41,8 @@ names(brick_for_prediction_norm) <- names(brick_for_prediction)
 
 # training shape preparation
 # the training shapefile is a polygon shapefile with three attributes 'id' - id of each polygon, 'type' - name of the landtype, 'class' - numeric identifier for each landtype
+# prepare the training shapefile in arc or qgis by drawing polygons over KNOWN landtypes - can verify in person or using googlestreetview if available
+# be aware that more polygons create more processing time.  Around 10 polygons of a few hectares in size per landtype is sufficient
 poly <- rgdal::readOGR(dsn   = "c:/Documents/training_shape.shp", 
                        layer = "training_shape", 
                        stringsAsFactors = FALSE)
@@ -54,10 +55,8 @@ template_rst <- raster(extent(rst_crop_lst$B02), # band B2 has resolution 10 m
                        resolution = 10,
                        crs = projection(rst_crop_lst$B02))
 poly_utm_rst <- rasterize(poly_utm, template_rst, field = 'id2')
-
 poly_dt <- as.data.table(rasterToPoints(poly_utm_rst))
 setnames(poly_dt, old = "layer", new = "id_cls")
-
 points <- SpatialPointsDataFrame(coords = poly_dt[, .(x, y)],
                                  data = poly_dt,
                                  proj4string = poly_utm_rst@crs)
@@ -225,6 +224,7 @@ sync(viewRGB(brick(rst_crop_lst[1:3]), r = 3, g = 2, b = 1) +
      mapView(predict_svm, col.regions = cls_dt$hex),
      mapView(predict_nnet, col.regions = cls_dt$hex))
 
+# CREATE CLASSIFIED RASTERS FROM THE MODEL PREDICTIONS
 raster::writeRaster(predict_rf, "C:/Documents/RF_prediction.tiff",
                     format = "GTiff",  # output format = GeoTIFF
                     overwrite = TRUE)
