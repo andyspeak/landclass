@@ -4,6 +4,7 @@ This repository contains the R code for the main steps used in the methodology o
 
 1. Stepwise instructions for classification of sentinel 2A imagery  into eight land types in upland UK watersheds.
 2. Models for simulating woodland creation scenarios
+   In three parts:  create woodland growth shapefiles, convert to raster and add to base raster, calculate metrics
 
 The image classification process is adapted from an online tutorial by Valentin Stefan available at:
 https://valentinitnelav.github.io/satellite-image-classification-r/
