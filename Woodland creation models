@@ -17,7 +17,11 @@ library(viridisLite)
 
 
 ###  PART ONE ####
-#1. LOAD SHAPEFILES AND SET VARS
+### Generate 100 shapefiles using the woodland creation models
+
+#1. LOAD BASE SHAPEFILES AND SET VARS
+# patches.shp is the study area divided into polygons, some of which are already woodland and the rest are potentials for conversioin
+# THere should be attributes called AREA (numeric (area)), ELEVATION (numeric), LANDTYPE (coded 1 - n), RIVERBUFFER (whether polygon is within 50m of a river - 0 or 1)
 
 img <- sf::st_read(dsn = "F:/Documents/folder/patches.shp",
                    stringsAsFactors = FALSE)
@@ -48,56 +52,45 @@ MOD_POD <- sub1$AREA*percent
 #riverbuffer runs
 img <-img %>%
   mutate(viable = case_when((ELEVATION < 300 & RIVERBUFFER==1 & LANDTYPE %in% c(2,4,5,6)) ~ 1, TRUE~0))
-img <-img %>%
-  mutate(viable = case_when((ELEV_MEAN < 300 & X70BUFF==1 & LULC_MAJOR %in% c(2,4,5,6)) ~ 1,
-                            TRUE~0))
-img <-img %>%
-  mutate(viable = case_when((ELEV_MEAN < 300 & riverbuf11==1 & LULC_MAJOR %in% c(2,4,5,6)) ~ 1, TRUE~0))
+
 #no river buffer
 img <-img %>%
-  mutate(viable = case_when((ELEV_MEAN < 300 & LULC_MAJOR %in% c(2,4,5,6)) ~ 1,
-                            TRUE~0))
+  mutate(viable = case_when((ELEVATION < 300 & LANDTYPE %in% c(2,4,5,6)) ~ 1, TRUE~0))
 
 #create near IDs for the proximal growth model
 img$nearID <- seq(1, nrow(img))
 img$near <- poly2nb(img, queen=FALSE)
-#test <- test %>% filter(!st_is_empty(.))#poly2nb doesnt like empty geoms
+#img <- img %>% filter(!st_is_empty(.)) #poly2nb doesnt like empty geoms
 
 #3. FUNCTIONS
 
 FUNrandom <- function(img){
   test <- img
-  treesub <- test %>% subset(LULC_MAJOR==8)
-  #nontree <- test %>% subset(!LULC_MAJOR==8)#the new MODPOD method doesnt need these
-  #start_tree <- sum(treesub$AREA)/sum(nontree$AREA)
+  treesub <- test %>% subset(LANDTYPE==8)
   while(sum(treesub$AREA) + DIFF < MOD_POD){
     print((sum(treesub$AREA)+DIFF )/MOD_POD)
-    sub <- subset(test, viable ==1 & !LULC_MAJOR==8)
+    sub <- subset(test, viable ==1 & !LANDTYPE==8)
     sub2 <- subset(test, !viable ==1)
-    sub[sample(nrow(sub),1),c('LULC_MAJOR','viable')] <- c(8,0)
+    sub[sample(nrow(sub),1),c('LANDTYPE','viable')] <- c(8,0)
     test <- rbind(sub, sub2)
-    treesub <- test %>% subset(LULC_MAJOR==8)
-    #nontree <- test %>% subset(!LULC_MAJOR==8)
+    treesub <- test %>% subset(LANDTYPE==8)
   }
   return (test)
 }
 
 FUNprox <- function(img){
   test <- img
-  treesub <- test %>% subset(LULC_MAJOR==8)
-  #nontree <- test %>% subset(!LULC_MAJOR==8)
-  #start_tree <- sum(treesub$AREA)/sum(nontree$AREA)
+  treesub <- test %>% subset(LANDTYPE==8)
   while(sum(treesub$AREA) + DIFF < MOD_POD){
     print((sum(treesub$AREA)+DIFF )/MOD_POD)
     sub <- subset(test, viable ==1)
     sub2 <- subset(test, !viable ==1)
     sub3 <- sub[sub$nearID %in% unlist(treesub$near),]
-    sub3[sample(nrow(sub3),1),c('LULC_MAJOR','viable')] <- c(8,0)
+    sub3[sample(nrow(sub3),1),c('LANDTYPE','viable')] <- c(8,0)
     z <- dplyr::setdiff(sub3, sub)
     sub <- sub[sub$nearID != z$nearID,]
     test <- rbind(sub, sub2,z)
-    treesub <- subset(test, LULC_MAJOR==8)
-    #nontree <- subset(test, !LULC_MAJOR==8)
+    treesub <- subset(test, LANDTYPE==8)
   }
   return (test)
 }
@@ -160,22 +153,16 @@ FUNprox <- function(img){
   return (test)
 }
 
-
-#to speed up the runs for MOD4 can sample 10 rows at a time but doesnt replace values
-# well, need to find a new way or just use the repair code below.
-
-# 4 -----------------------------------------------------------------------
-
-
 #4. MODEL CODE
-#naming convention = lowth_mod1_rand10_buff50_run1.shp
+# naming convention = catchment_patchsize_rand10_buff50_run1.shp   which includes catchment/patchsize/growth scenario and percentage growth/river buffer/run number
 start_time <- Sys.time()
 for (i in 2:100){
   print(i)
   out <- FUNrandom(img)
   out <- st_collection_extract(out, "POLYGON")
-  out <- out[ , !names(out) %in% c("near")]#stwrite doesnt like columns of lists
-  st_write(out, paste("G:/CASTOR/catchments/colne_vectors/MOD3/rand40/colne_mod3_rand40_river_run",i,".shp",sep="_"))
+  out <- out[ , !names(out) %in% c("near")]     #stwrite doesnt like columns of lists
+  st_write(out, paste("F:/Documents/Folder/outputs/MOD3/colne_mod3_rand40_river_run",i,".shp",sep="_"))
+
   #out2 <- FUNprox(img)
   #out2 <- st_collection_extract(out2, "POLYGON")
   #out2 <- out2[ , !names(out2) %in% c("near")]
@@ -187,16 +174,12 @@ end_time - start_time
 
 
 ###PART TWO ####
-# 5 ---------------------------------------------------------------
+### Convert to raster and add back to basemap
 
 #5. Convert to rasters for the landscape analysis
-
 #initiate the raster template
-vect <- sf::st_read(dsn = "F:/Documents/CASTOR/Treescenarios/MODELS/catchment/lowth_vectors/lowth_mod2_rand10_prox_run_1_.shp",
-                    stringsAsFactors = FALSE, crs = 27700)
-vect <- sf::st_read(dsn = "G:/CASTOR/catchments/enner_vectors/MOD1/enner_mod1_rand10_prox_river_run_2_.shp",
-                    stringsAsFactors = FALSE, crs = 27700)
-vect <- sf::st_read(dsn = "G:/CASTOR/catchments/colne_vectors/MOD1/colne_mod1_rand10_prox_river_run_2_.shp",
+
+vect <- sf::st_read(dsn = "F:/Documents/Folder/lowth_mod2_rand10_prox_run_1_.shp",
                     stringsAsFactors = FALSE, crs = 27700)
 rrr <- terra::rast(vect, ncols=1421, nrows=2146)#biglowther
 rrr <- terra::rast("F:/Documents/CASTOR/Treescenarios/MODELS/catchment/enner_rasters/raster_template.tif")#enner
@@ -204,13 +187,13 @@ rrr <- terra::rast("F:/Documents/CASTOR/Treescenarios/MODELS/catchment/colne_ras
 rrr <- disagg(rrr, 10)
 t <- sf::st_read("F:/Documents/CASTOR/Treescenarios/MODELS/catchment/lowth_vectors/lowth_mod1_rand10_prox_run_2_.shp", stringsAsFactors = FALSE, crs = 27700)
 
-files <- list.files(path="G:/CASTOR/catchments/colne_vectors/MOD3/rand40", pattern="*.shp",full.names=TRUE, recursive=FALSE)
+files <- list.files(path="F/Documents/Folder/outputs/MOD3/", pattern="*.shp",full.names=TRUE, recursive=FALSE)
 lapply(files, function(x) {
   t <- sf::st_read(x, stringsAsFactors = FALSE, crs = 27700) # load file
-  out <- terra::rasterize(t, rrr, field="LULC_MAJOR")
-  out <- aggregate(out, 10, "modal")#pixel gets the most common shp value by area
+  out <- terra::rasterize(t, rrr, field="LANDTYPE")
+  out <- aggregate(out, 10, "modal")#pixel gets the most common shapefile polygon value by area
   i <- file_path_sans_ext(basename(x))
-  terra::writeRaster(out, paste("G:/CASTOR/catchments/colne_rasters/MOD3/rand40/",i,".tiff",sep=""), filetype="GTiff")
+  terra::writeRaster(out, paste("F:/Documents/Folder/catchment_rasters/MOD3/rand40/",i,".tiff",sep=""), filetype="GTiff")
 })
 
 
@@ -263,27 +246,19 @@ for (i in files){
 
 
 ####  PART THREE  #####
-
-
-# 7 -----------------------------------------------------------------------
+### Calculate landscape metrics
 
 #7. calculate landscape metrics on rasters
 
-files <- list.files(path="G:/CASTOR/catchments/colne_rasters/combined/", pattern = "*.tiff", full.names = TRUE, recursive=FALSE)
+files <- list.files(path="F:/Documents/Folder/combined/", pattern = "*.tiff", full.names = TRUE, recursive=FALSE)
 results=setNames(data.frame(matrix(ncol = 16, nrow = 0)), c("land","ai","area_mn","ca","cai_mn","clumpy","cohesion",
-                                                            "ed","enn_mn","frac_mn","lpi","lsi","np","pd","shape_mn","file"  ))
-results=setNames(data.frame(matrix(ncol = 16, nrow = 0)), c("land","aggreg.index","patch.area_mn","total.class.area","core.area.index_mn","patch.cohesion",
-                                                            "edge.density","euclid.near.neigh_mn","fractal.dimension_mn","largest.patch.index","landscape.shape.index","no.of.patches","patch.density","shape.index_mn","file"  ))
-results=setNames(data.frame(matrix(ncol = 10, nrow = 0)), c("land","aggreg.index","patch.area_mn","core.area.index_mn",
-                                                            "edge.density","euclid.near.neigh_mn","largest.patch.index","no.of.patches","patch.density","file"  ))
-results=setNames(data.frame(matrix(ncol = 3, nrow = 0)), c("land","classarea","file"  ))
+                                                            "ed","enn_mn","frac_mn","lpi","lsi","np","pd","shape_mn","file"  )) #see landscapemetrics package for correct codes
 
-img <- raster("F:/Documents/CASTOR/Treescenarios/MODELS/catchment/COLNE_masterraster_reclass.tif")
-for (i in files2){
+img <- raster("F:/Documents/Folder/CASTOR/Treescenarios/MODELS/catchment/COLNE_masterraster_reclass.tif")
+for (i in files){
   img <- raster(i)
-  print(i)
-  values(img)[values(img)<8 ] =1#this is just for the combo files cos didnt like zeros
-  classmetrics <-calculate_lsm(img, what=c("lsm_c_ai", "lsm_c_area_mn",
+  values(img)[values(img)<8 ] =1#this is just for the combo files because didnt like zeros
+  classmetrics <-calculate_lsm(img, what=c("lsm_c_ai", "lsm_c_area_mn", #etc....use landscapemetrics codes for the calculate_lsm function
                                            "lsm_c_cai_mn",
                                            "lsm_c_ed", "lsm_c_enn_mn",
                                            "lsm_c_lpi","lsm_c_np","lsm_c_pd"))
@@ -295,20 +270,4 @@ for (i in files2){
   results <- rbind(results, classmetrics2)
 }
 
-circle, core area, core area percent, fractal, landscape shape,  norm landscape shape, perim-area fractal, shape, total core area
-lsm_c_circle_mn  lsm_c_core_mn  lsm_c_cpland  lsm_c_frac_mn  lsm_c_lsi  lsm_c_nlsi  lsm_c_pafrac  lsm_c_shape_mn  lsm_c_tca
-results=setNames(data.frame(matrix(ncol = 11, nrow = 0)), c("land","circle","core","cpland",
-                                                            "frac","lsi","nlsi","pafrac","shape","tca","file"  ))
-
-for (i in files){
-  img <- raster(i)
-  print(i)
-  values(img)[values(img)<8 ] =1#this is just for the combo files cos didnt like zeros
-  classmetrics <-calculate_lsm(img, what=c("lsm_c_circle_mn", "lsm_c_core_mn","lsm_c_frac_mn",
-                                           "lsm_c_cpland", "lsm_c_lsi",
-                                           "lsm_c_nlsi","lsm_c_pafrac","lsm_c_tca","lsm_c_shape_mn"))
-  classmetrics$land<-plyr::revalue(factor(classmetrics$class),
-                                   c("1"="Bare","8"="Woodland"))
-  classmetrics2<-spread(classmetrics[,c(5:7)],key =metric,value = value) 
-  classmetrics2$file <- basename(i)
-  results <- rbind(results, classmetrics2)
+#export the results as csv for further analysis
