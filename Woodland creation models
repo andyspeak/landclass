@@ -20,16 +20,16 @@ library(viridisLite)
 ### Generate 100 shapefiles using the woodland creation models
 
 #1. LOAD BASE SHAPEFILES AND SET VARS
-# patches.shp is the study area divided into polygons, some of which are already woodland and the rest are potentials for conversioin
+# patches.shp is the study area divided into polygons, some of which are already woodland and the rest are potentials for conversion
 # THere should be attributes called AREA (numeric (area)), ELEVATION (numeric), LANDTYPE (coded 1 - n), RIVERBUFFER (whether polygon is within 50m of a river - 0 or 1)
 
 img <- sf::st_read(dsn = "F:/Documents/folder/patches.shp",
                    stringsAsFactors = FALSE)
 
-combo <- sf::st_read(dsn = "F:/Documents/CASTOR/Treescenarios/MODELS/catchment/colne_vectors/master_MOD3combovect_colne.shp",
+combo <- sf::st_read(dsn = "F:/Documents/folder/combo.shp",
                      stringsAsFactors = FALSE, crs = 27700)
 
-master <- sf::st_read(dsn = "F:/Documents/CASTOR/Treescenarios/MODELS/catchment/colne_vectors/colne_mastervect.shp",
+master <- sf::st_read(dsn = "F:/Documents/folder/mastervect.shp",
                       stringsAsFactors = FALSE, crs = 27700)
 
 
@@ -39,9 +39,8 @@ master <- sf::st_read(dsn = "F:/Documents/CASTOR/Treescenarios/MODELS/catchment/
 
 percent <- 1.1  #percent to increase the areal coverage by relative to starting coverage (values of 1.1, 1.3, 1.5 correspond to 10%, 30%, 50%)
 
-#sub1 <- subset(combo, tree==1)
-sub1 <- subset(combo, ID==1)#some have ID and not tree as headings
-sub2 <- subset(img, LULC_MAJOR==8)
+sub1 <- subset(combo, LANDTYPE==8) #subset to the woodland landtype (in this case - 8)
+sub2 <- subset(img, LANDTYPE==8)
 
 DIFF <- round(sub1$AREA-sum(sub2$AREA))
 MOD_POD <- sub1$AREA*percent
@@ -51,7 +50,7 @@ MOD_POD <- sub1$AREA*percent
 
 #riverbuffer runs
 img <-img %>%
-  mutate(viable = case_when((ELEVATION < 300 & RIVERBUFFER==1 & LANDTYPE %in% c(2,4,5,6)) ~ 1, TRUE~0))
+  mutate(viable = case_when((ELEVATION < 300 & RIVERBUFFER==1 & LANDTYPE %in% c(2,4,5,6)) ~ 1, TRUE~0))#keeping the wanted landtypes such as grass, agriculture
 
 #no river buffer
 img <-img %>%
@@ -71,7 +70,8 @@ FUNrandom <- function(img){
     print((sum(treesub$AREA)+DIFF )/MOD_POD)
     sub <- subset(test, viable ==1 & !LANDTYPE==8)
     sub2 <- subset(test, !viable ==1)
-    sub[sample(nrow(sub),1),c('LANDTYPE','viable')] <- c(8,0)
+    sub[sample(nrow(sub),1),c('LANDTYPE','viable')] <- c(8,0)#this step can be sped up by sampling more than 1 row each time - see next line of code.  This can overshoot the MOD_POD though
+    #sub[sample(nrow(sub),50),c('LULC_MAJOR','viable')] <- matrix(rep(c(8,0),50),ncol=2,byrow=T)
     test <- rbind(sub, sub2)
     treesub <- test %>% subset(LANDTYPE==8)
   }
@@ -95,73 +95,17 @@ FUNprox <- function(img){
   return (test)
 }
 
-
-
-FUNrandom <- function(img){
-  test <- img
-  treesub <- test %>% subset(LULC_MAJOR==8)
-  #nontree <- test %>% subset(!LULC_MAJOR==8)#the new MODPOD method doesnt need these
-  #start_tree <- sum(treesub$AREA)/sum(nontree$AREA)
-  while(sum(treesub$AREA) + DIFF < MOD_POD){
-    print((sum(treesub$AREA)+DIFF )/MOD_POD)
-    sub <- subset(test, viable ==1 & !LULC_MAJOR==8)
-    sub2 <- subset(test, !viable ==1)
-    sub[sample(nrow(sub),50),c('LULC_MAJOR','viable')] <- matrix(rep(c(8,0),50),ncol=2,byrow=T)
-    test <- rbind(sub, sub2)
-    treesub <- test %>% subset(LULC_MAJOR==8)
-    #nontree <- test %>% subset(!LULC_MAJOR==8)
-  }
-  while(sum(treesub$AREA) + DIFF > MOD_POD){
-    print((sum(treesub$AREA)+DIFF )/MOD_POD)
-    sub <- subset(test, LULC_MAJOR==8)
-    sub2 <- subset(test, !LULC_MAJOR ==8)
-    sub[sample(nrow(sub),1),c('LULC_MAJOR','viable')] <- c(5,1)
-    test <- rbind(sub, sub2)
-    treesub <- test %>% subset(LULC_MAJOR==8)
-    #nontree <- test %>% subset(!LULC_MAJOR==8)
-  }
-  return (test)
-}
-
-FUNprox <- function(img){
-  test <- img
-  treesub <- test %>% subset(LULC_MAJOR==8)
-  #nontree <- test %>% subset(!LULC_MAJOR==8)
-  #start_tree <- sum(treesub$AREA)/sum(nontree$AREA)
-  while(sum(treesub$AREA) + DIFF < MOD_POD){
-    sub <- subset(test, viable ==1)
-    sub2 <- subset(test, !viable ==1)
-    sub3 <- sub[sub$nearID %in% unlist(treesub$near),]
-    sub3[sample(nrow(sub3),50),c('LULC_MAJOR','viable')] <- matrix(rep(c(8,0),50),ncol=2,byrow=T)
-    z <- dplyr::setdiff(sub3, sub)
-    sub <- sub[!sub$nearID %in% z$nearID,]
-    test <- rbind(sub, sub2,z)
-    treesub <- subset(test, LULC_MAJOR==8)
-    #nontree <- subset(test, !LULC_MAJOR==8)
-  }
-  while(sum(treesub$AREA) + DIFF > MOD_POD){
-    sub <- subset(test, viable ==1)
-    sub2 <- subset(test, !viable ==1)
-    sub3 <- sub2[sub2$nearID %in% unlist(sub$near),]
-    sub3[sample(nrow(sub3),1),c('LULC_MAJOR','viable')] <- c(5,1)
-    z <- dplyr::setdiff(sub3, sub2)
-    sub2 <- sub2[sub2$nearID != z$nearID,]
-    test <- rbind(sub, sub2,z)
-    treesub <- subset(test, LULC_MAJOR==8)
-    #nontree <- subset(test, !LULC_MAJOR==8)
-  }
-  return (test)
-}
-
 #4. MODEL CODE
-# naming convention = catchment_patchsize_rand10_buff50_run1.shp   which includes catchment/patchsize/growth scenario and percentage growth/river buffer/run number
+# naming convention for output files = catchment_patchsize_rand10_buff50_run1.shp   which includes catchment/patchsize/growth scenario and percentage growth/river buffer/run number
+# use out or out2 depending on which function using
+
 start_time <- Sys.time()
 for (i in 2:100){
   print(i)
   out <- FUNrandom(img)
   out <- st_collection_extract(out, "POLYGON")
   out <- out[ , !names(out) %in% c("near")]     #stwrite doesnt like columns of lists
-  st_write(out, paste("F:/Documents/Folder/outputs/MOD3/colne_mod3_rand40_river_run",i,".shp",sep="_"))
+  st_write(out, paste("F:/Documents/folder/outputs/MOD3/colne_mod3_rand40_river_run",i,".shp",sep="_"))
 
   #out2 <- FUNprox(img)
   #out2 <- st_collection_extract(out2, "POLYGON")
@@ -179,21 +123,18 @@ end_time - start_time
 #5. Convert to rasters for the landscape analysis
 #initiate the raster template
 
-vect <- sf::st_read(dsn = "F:/Documents/Folder/lowth_mod2_rand10_prox_run_1_.shp",
+vect <- sf::st_read(dsn = "F:/Documents/folder/lowth_mod2_rand10_prox_run_1_.shp",
                     stringsAsFactors = FALSE, crs = 27700)
-rrr <- terra::rast(vect, ncols=1421, nrows=2146)#biglowther
-rrr <- terra::rast("F:/Documents/CASTOR/Treescenarios/MODELS/catchment/enner_rasters/raster_template.tif")#enner
-rrr <- terra::rast("F:/Documents/CASTOR/Treescenarios/MODELS/catchment/colne_rasters/raster_templatecol.tif")#colne
+rrr <- terra::rast(vect, ncols=1421, nrows=2146)#can create raster using fixed cols and rows
 rrr <- disagg(rrr, 10)
-t <- sf::st_read("F:/Documents/CASTOR/Treescenarios/MODELS/catchment/lowth_vectors/lowth_mod1_rand10_prox_run_2_.shp", stringsAsFactors = FALSE, crs = 27700)
 
 files <- list.files(path="F/Documents/Folder/outputs/MOD3/", pattern="*.shp",full.names=TRUE, recursive=FALSE)
 lapply(files, function(x) {
   t <- sf::st_read(x, stringsAsFactors = FALSE, crs = 27700) # load file
   out <- terra::rasterize(t, rrr, field="LANDTYPE")
-  out <- aggregate(out, 10, "modal")#pixel gets the most common shapefile polygon value by area
+  out <- aggregate(out, 10, "modal") #pixel gets the most common shapefile polygon value by area
   i <- file_path_sans_ext(basename(x))
-  terra::writeRaster(out, paste("F:/Documents/Folder/catchment_rasters/MOD3/rand40/",i,".tiff",sep=""), filetype="GTiff")
+  terra::writeRaster(out, paste("F:/Documents/folder/catchment_rasters/MOD3/rand40/",i,".tiff",sep=""), filetype="GTiff")
 })
 
 
